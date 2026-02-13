@@ -1220,7 +1220,9 @@
                             return true;
                         } else {
                             // Keystone damages Brett
+                            console.log('Brett hit by Keystone! Health before:', brett.health);
                             brett.health -= 5;
+                            console.log('Brett health after:', brett.health);
                             brett.hitTimer = 20;
                             if (brett.health <= 0) {
                                 brett.health = 0;
