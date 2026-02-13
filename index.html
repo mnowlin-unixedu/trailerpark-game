@@ -1209,10 +1209,10 @@
                 
                 // Check if player projectiles hit Brett (only TRS-80 and Keystone)
                 if ((proj.type === 'trs80' || proj.type === 'keystone') && !brett.dead &&
-                    proj.x > brett.x - 20 && 
-                    proj.x < brett.x + 50 &&
-                    proj.y > brett.y && 
-                    proj.y < brett.y + 80) {
+                    proj.x + 15 > brett.x && 
+                    proj.x < brett.x + brett.width &&
+                    proj.y + 15 > brett.y && 
+                    proj.y < brett.y + brett.height) {
                     
                     if (proj.type === 'keystone') {
                         if (brett.blocking) {
