@@ -1,0 +1,902 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Trailer Park Hangout</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            background: #1a1a1a;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            font-family: 'Courier New', monospace;
+            overflow: hidden;
+        }
+        #gameContainer {
+            position: relative;
+            max-width: 100vw;
+            max-height: 100vh;
+        }
+        canvas {
+            border: 4px solid #444;
+            display: block;
+            background: #87CEEB;
+            image-rendering: pixelated;
+            image-rendering: crisp-edges;
+        }
+        #startScreen {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.9);
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            color: white;
+            z-index: 100;
+        }
+        #startScreen h1 {
+            font-size: 48px;
+            margin-bottom: 20px;
+            color: #4ade80;
+            text-shadow: 3px 3px 0 #000;
+        }
+        #startScreen p {
+            font-size: 18px;
+            margin: 10px 0;
+            max-width: 80%;
+            text-align: center;
+        }
+        #startBtn {
+            margin-top: 30px;
+            padding: 15px 40px;
+            font-size: 24px;
+            background: #4ade80;
+            color: white;
+            border: 3px solid white;
+            cursor: pointer;
+            font-family: 'Courier New', monospace;
+            font-weight: bold;
+        }
+        #startBtn:hover {
+            background: #22c55e;
+        }
+        #mobileControls {
+            position: absolute;
+            bottom: 10px;
+            width: 100%;
+            display: none;
+            justify-content: space-between;
+            padding: 0 15px;
+            pointer-events: none;
+        }
+        .controlBtn {
+            width: 50px;
+            height: 50px;
+            border-radius: 50%;
+            background: rgba(255,255,255,0.3);
+            border: 2px solid rgba(255,255,255,0.5);
+            font-size: 20px;
+            color: white;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            touch-action: none;
+            user-select: none;
+            pointer-events: auto;
+        }
+        .controlBtn:active {
+            background: rgba(255,255,255,0.6);
+        }
+        .leftControls {
+            display: flex;
+            gap: 8px;
+            align-items: flex-end;
+        }
+        .rightControls {
+            display: flex;
+            gap: 8px;
+            align-items: flex-end;
+        }
+        @media (max-width: 768px) {
+            #mobileControls {
+                display: flex;
+            }
+            #startScreen h1 {
+                font-size: 32px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div id="gameContainer">
+        <canvas id="gameCanvas"></canvas>
+        
+        <div id="startScreen">
+            <h1>TRAILER PARK HANGOUT</h1>
+            <p>You control RANDY - throw 20 Keystones to Brett!</p>
+            <p>Mark throws useless TRS-80s. Brett's spatula blocks randomly.</p>
+            <p>Michael's just gonna get high... as usual.</p>
+            <p><strong>Desktop:</strong> Arrow Keys = Move/Jump, Space = Throw Keystone</p>
+            <p><strong>Mobile:</strong> Touch controls below</p>
+            <button id="startBtn">START</button>
+        </div>
+        
+        <div id="mobileControls">
+            <div class="leftControls">
+                <button class="controlBtn" id="leftBtn">◀</button>
+                <button class="controlBtn" id="upBtn">▲</button>
+                <button class="controlBtn" id="rightBtn">▶</button>
+            </div>
+            <div class="rightControls">
+                <button class="controlBtn" id="attackBtn">🍺</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const startScreen = document.getElementById('startScreen');
+        const startBtn = document.getElementById('startBtn');
+        
+        let gameStarted = false;
+        
+        // Set canvas size
+        function resizeCanvas() {
+            const maxWidth = window.innerWidth - 20;
+            const maxHeight = window.innerHeight - 20;
+            const aspectRatio = 16 / 9;
+            
+            let width = Math.min(900, maxWidth);
+            let height = width / aspectRatio;
+            
+            if (height > maxHeight) {
+                height = maxHeight;
+                width = height * aspectRatio;
+            }
+            
+            canvas.width = 900;
+            canvas.height = 506;
+            canvas.style.width = width + 'px';
+            canvas.style.height = height + 'px';
+        }
+        resizeCanvas();
+        window.addEventListener('resize', resizeCanvas);
+
+        // Game constants
+        const gravity = 0.8;
+        const groundY = 380;
+        
+        // Game state
+        let gameState = 'playing';
+        const keys = {};
+        let keystoneCount = 0;
+        let hearts = [];
+        
+        // Player is Randy
+        let randy = {
+            x: 100,
+            y: groundY,
+            width: 50,
+            height: 70,
+            velocityY: 0,
+            speed: 5,
+            jumpPower: 15,
+            isJumping: false,
+            direction: 1,
+            throwing: false,
+            throwTimer: 0
+        };
+        
+        // Mark is AI controlled - follows Randy
+        let mark = {
+            x: 200,
+            y: groundY,
+            width: 50,
+            height: 70,
+            throwTimer: 0,
+            throwing: false,
+            speechTimer: 0,
+            currentSpeech: '',
+            speeches: [
+                'Take that Darly!',
+                'Go Randy, go!',
+                'Oh you blocking that with that spatula??',
+                'Come on Brett!',
+                'Michael, are you just getting high again? wtf?',
+                'Stop blocking bro!',
+                'Just catch it already!',
+                'Nice throw Randy!',
+                'That spatula ain\'t saving you!'
+            ]
+        };
+        
+        let brett = {
+            x: 700,
+            y: groundY,
+            width: 50,
+            height: 80,
+            grilling: true,
+            drinkTimer: 0,
+            blocking: false,
+            blockTimer: 0
+        };
+        
+        let michael = {
+            x: 400,
+            y: groundY,
+            width: 50,
+            height: 70,
+            smokeTimer: 0
+        };
+        
+        let projectiles = [];
+        
+        // Start game
+        startBtn.addEventListener('click', () => {
+            startScreen.style.display = 'none';
+            gameStarted = true;
+        });
+
+        // Input handling
+        document.addEventListener('keydown', (e) => {
+            keys[e.key] = true;
+            if (e.key === ' ') e.preventDefault();
+        });
+        
+        document.addEventListener('keyup', (e) => {
+            keys[e.key] = false;
+        });
+
+        // Mobile controls
+        ['leftBtn', 'rightBtn', 'upBtn', 'attackBtn'].forEach(id => {
+            const btn = document.getElementById(id);
+            btn.addEventListener('touchstart', (e) => {
+                e.preventDefault();
+                if (id === 'leftBtn') keys['ArrowLeft'] = true;
+                if (id === 'rightBtn') keys['ArrowRight'] = true;
+                if (id === 'upBtn') keys['ArrowUp'] = true;
+                if (id === 'attackBtn') keys[' '] = true;
+            });
+            btn.addEventListener('touchend', (e) => {
+                e.preventDefault();
+                if (id === 'leftBtn') keys['ArrowLeft'] = false;
+                if (id === 'rightBtn') keys['ArrowRight'] = false;
+                if (id === 'upBtn') keys['ArrowUp'] = false;
+                if (id === 'attackBtn') keys[' '] = false;
+            });
+        });
+
+        // Draw functions
+        function drawLabel(text, x, y) {
+            ctx.save();
+            ctx.fillStyle = 'white';
+            ctx.strokeStyle = 'black';
+            ctx.lineWidth = 3;
+            ctx.font = 'bold 14px Arial';
+            ctx.textAlign = 'center';
+            ctx.strokeText(text, x, y);
+            ctx.fillText(text, x, y);
+            ctx.restore();
+        }
+
+        function drawRandy() {
+            ctx.save();
+            
+            // Body
+            ctx.fillStyle = '#22c55e';
+            ctx.fillRect(randy.x + 15, randy.y + 25, 20, 35);
+            
+            // Bald head
+            ctx.fillStyle = '#fbbf24';
+            ctx.beginPath();
+            ctx.arc(randy.x + 25, randy.y + 15, 12, 0, Math.PI * 2);
+            ctx.fill();
+            
+            // Shiny bald spot
+            ctx.fillStyle = 'rgba(255,255,255,0.5)';
+            ctx.beginPath();
+            ctx.arc(randy.x + 28, randy.y + 12, 4, 0, Math.PI * 2);
+            ctx.fill();
+            
+            // Arms
+            ctx.strokeStyle = '#fbbf24';
+            ctx.lineWidth = 5;
+            
+            if (randy.throwing) {
+                ctx.beginPath();
+                ctx.moveTo(randy.x + 25, randy.y + 30);
+                ctx.lineTo(randy.x + 45, randy.y + 25);
+                ctx.stroke();
+            } else {
+                ctx.beginPath();
+                ctx.moveTo(randy.x + 25, randy.y + 30);
+                ctx.lineTo(randy.x + 35, randy.y + 40);
+                ctx.stroke();
+            }
+            
+            // Legs
+            ctx.beginPath();
+            ctx.moveTo(randy.x + 20, randy.y + 60);
+            ctx.lineTo(randy.x + 17, randy.y + 70);
+            ctx.stroke();
+            
+            ctx.beginPath();
+            ctx.moveTo(randy.x + 30, randy.y + 60);
+            ctx.lineTo(randy.x + 33, randy.y + 70);
+            ctx.stroke();
+
+            drawLabel('RANDY (YOU)', randy.x + 25, randy.y - 5);
+            
+            ctx.restore();
+        }
+
+        function drawMark() {
+            ctx.save();
+            
+            // Body
+            ctx.fillStyle = '#3b82f6';
+            ctx.fillRect(mark.x + 15, mark.y + 25, 20, 35);
+            
+            // Head
+            ctx.fillStyle = '#fbbf24';
+            ctx.beginPath();
+            ctx.arc(mark.x + 25, mark.y + 15, 12, 0, Math.PI * 2);
+            ctx.fill();
+            
+            // Arms
+            ctx.strokeStyle = '#fbbf24';
+            ctx.lineWidth = 5;
+            if (mark.throwing) {
+                ctx.beginPath();
+                ctx.moveTo(mark.x + 25, mark.y + 30);
+                ctx.lineTo(mark.x + 45, mark.y + 30);
+                ctx.stroke();
+                
+                // TRS-80
+                ctx.fillStyle = '#666';
+                ctx.fillRect(mark.x + 50, mark.y + 25, 25, 18);
+                ctx.fillStyle = '#222';
+                ctx.fillRect(mark.x + 52, mark.y + 27, 21, 10);
+            } else {
+                ctx.beginPath();
+                ctx.moveTo(mark.x + 25, mark.y + 30);
+                ctx.lineTo(mark.x + 35, mark.y + 40);
+                ctx.stroke();
+            }
+            
+            // Legs
+            ctx.beginPath();
+            ctx.moveTo(mark.x + 20, mark.y + 60);
+            ctx.lineTo(mark.x + 17, mark.y + 70);
+            ctx.stroke();
+            
+            ctx.beginPath();
+            ctx.moveTo(mark.x + 30, mark.y + 60);
+            ctx.lineTo(mark.x + 33, mark.y + 70);
+            ctx.stroke();
+
+            drawLabel('MARK', mark.x + 25, mark.y - 5);
+            
+            // Speech bubble
+            if (mark.currentSpeech) {
+                const bubbleWidth = Math.max(120, mark.currentSpeech.length * 6);
+                const bubbleHeight = 35;
+                const bubbleX = mark.x - bubbleWidth/2 + 25;
+                const bubbleY = mark.y - 60;
+                
+                // Bubble
+                ctx.fillStyle = 'white';
+                ctx.strokeStyle = 'black';
+                ctx.lineWidth = 2;
+                ctx.beginPath();
+                ctx.roundRect(bubbleX, bubbleY, bubbleWidth, bubbleHeight, 5);
+                ctx.fill();
+                ctx.stroke();
+                
+                // Tail
+                ctx.beginPath();
+                ctx.moveTo(mark.x + 20, mark.y - 25);
+                ctx.lineTo(mark.x + 15, mark.y - 30);
+                ctx.lineTo(mark.x + 25, mark.y - 35);
+                ctx.fillStyle = 'white';
+                ctx.fill();
+                ctx.strokeStyle = 'black';
+                ctx.lineWidth = 2;
+                ctx.stroke();
+                
+                // Text
+                ctx.fillStyle = 'black';
+                ctx.font = 'bold 11px Arial';
+                ctx.textAlign = 'center';
+                const words = mark.currentSpeech.split(' ');
+                let line1 = '';
+                let line2 = '';
+                let midpoint = Math.floor(words.length / 2);
+                line1 = words.slice(0, midpoint).join(' ');
+                line2 = words.slice(midpoint).join(' ');
+                
+                if (line2) {
+                    ctx.fillText(line1, bubbleX + bubbleWidth/2, bubbleY + 15);
+                    ctx.fillText(line2, bubbleX + bubbleWidth/2, bubbleY + 27);
+                } else {
+                    ctx.fillText(mark.currentSpeech, bubbleX + bubbleWidth/2, bubbleY + 20);
+                }
+            }
+            
+            ctx.restore();
+        }
+
+        function drawBrett() {
+            ctx.save();
+            
+            // Snap-on shirt
+            ctx.fillStyle = '#dc2626';
+            ctx.fillRect(brett.x + 12, brett.y + 30, 26, 40);
+            
+            // Snap buttons
+            ctx.fillStyle = 'white';
+            for(let i = 0; i < 4; i++) {
+                ctx.fillRect(brett.x + 23, brett.y + 35 + (i * 8), 4, 4);
+            }
+            
+            // Head
+            ctx.fillStyle = '#ffdbac';
+            ctx.beginPath();
+            ctx.arc(brett.x + 25, brett.y + 18, 13, 0, Math.PI * 2);
+            ctx.fill();
+            
+            // Crew cut hair
+            ctx.fillStyle = '#8b6914';
+            ctx.fillRect(brett.x + 15, brett.y + 8, 20, 8);
+            
+            // Jeans
+            ctx.fillStyle = '#1e3a8a';
+            ctx.fillRect(brett.x + 15, brett.y + 70, 10, 10);
+            ctx.fillRect(brett.x + 25, brett.y + 70, 10, 10);
+            
+            // Keystone in hand
+            if (brett.drinkTimer > 0) {
+                ctx.fillStyle = '#c0c0c0';
+                ctx.fillRect(brett.x + 35, brett.y + 35, 12, 20);
+                ctx.fillStyle = '#1e40af';
+                ctx.fillRect(brett.x + 36, brett.y + 36, 10, 8);
+            }
+            
+            // Spatula (blocking or at grill)
+            ctx.fillStyle = '#8b4513';
+            ctx.fillRect(brett.x - 15, brett.y + 45, 3, 25);
+            ctx.fillStyle = '#c0c0c0';
+            if (brett.blocking) {
+                // Spatula raised to block
+                ctx.fillRect(brett.x - 25, brett.y + 35, 20, 8);
+            } else {
+                // Spatula at grill
+                ctx.fillRect(brett.x - 22, brett.y + 55, 15, 6);
+            }
+            
+            // Arm holding spatula
+            ctx.strokeStyle = '#ffdbac';
+            ctx.lineWidth = 5;
+            ctx.beginPath();
+            ctx.moveTo(brett.x + 12, brett.y + 35);
+            ctx.lineTo(brett.x - 10, brett.y + 50);
+            ctx.stroke();
+
+            // Grill
+            ctx.fillStyle = '#333';
+            ctx.fillRect(brett.x - 40, brett.y + 50, 35, 30);
+            ctx.fillStyle = '#666';
+            ctx.fillRect(brett.x - 40, brett.y + 45, 35, 5);
+            
+            // Chicken on grill
+            ctx.fillStyle = '#ffc0cb';
+            ctx.fillRect(brett.x - 35, brett.y + 55, 10, 8);
+            ctx.fillRect(brett.x - 20, brett.y + 55, 10, 8);
+            
+            // Smoke from grill
+            ctx.fillStyle = 'rgba(150,150,150,0.3)';
+            ctx.beginPath();
+            ctx.arc(brett.x - 25, brett.y + 35, 8, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.beginPath();
+            ctx.arc(brett.x - 30, brett.y + 25, 10, 0, Math.PI * 2);
+            ctx.fill();
+
+            drawLabel('BRETT', brett.x + 25, brett.y);
+            
+            // Keystone counter
+            ctx.fillStyle = 'white';
+            ctx.strokeStyle = 'black';
+            ctx.lineWidth = 3;
+            ctx.font = 'bold 18px Arial';
+            ctx.strokeText(`Keystones: ${keystoneCount}/20`, brett.x + 25, brett.y - 20);
+            ctx.fillText(`Keystones: ${keystoneCount}/20`, brett.x + 25, brett.y - 20);
+            
+            ctx.restore();
+        }
+
+        function drawMichael() {
+            ctx.save();
+            
+            // Body
+            ctx.fillStyle = '#a855f7';
+            ctx.fillRect(michael.x + 15, michael.y + 25, 20, 35);
+            
+            // Head - darker skin
+            ctx.fillStyle = '#92400e';
+            ctx.beginPath();
+            ctx.arc(michael.x + 25, michael.y + 15, 12, 0, Math.PI * 2);
+            ctx.fill();
+            
+            // Dark hair
+            ctx.fillStyle = '#1c1917';
+            ctx.fillRect(michael.x + 15, michael.y + 5, 20, 12);
+            
+            // Lazy arms
+            ctx.strokeStyle = '#92400e';
+            ctx.lineWidth = 5;
+            ctx.beginPath();
+            ctx.moveTo(michael.x + 15, michael.y + 30);
+            ctx.lineTo(michael.x + 10, michael.y + 45);
+            ctx.stroke();
+            
+            ctx.beginPath();
+            ctx.moveTo(michael.x + 35, michael.y + 30);
+            ctx.lineTo(michael.x + 40, michael.y + 45);
+            ctx.stroke();
+            
+            // Joint
+            ctx.fillStyle = 'white';
+            ctx.fillRect(michael.x + 38, michael.y + 42, 8, 2);
+            ctx.fillStyle = '#ef4444';
+            ctx.fillRect(michael.x + 46, michael.y + 41, 2, 4);
+            
+            // Smoke
+            michael.smokeTimer++;
+            if (michael.smokeTimer % 30 < 15) {
+                ctx.fillStyle = 'rgba(200,200,200,0.4)';
+                ctx.beginPath();
+                ctx.arc(michael.x + 50, michael.y + 35, 5, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.beginPath();
+                ctx.arc(michael.x + 55, michael.y + 25, 6, 0, Math.PI * 2);
+                ctx.fill();
+            }
+            
+            // Legs
+            ctx.beginPath();
+            ctx.moveTo(michael.x + 20, michael.y + 60);
+            ctx.lineTo(michael.x + 17, michael.y + 70);
+            ctx.stroke();
+            
+            ctx.beginPath();
+            ctx.moveTo(michael.x + 30, michael.y + 60);
+            ctx.lineTo(michael.x + 33, michael.y + 70);
+            ctx.stroke();
+
+            drawLabel('MICHAEL', michael.x + 25, michael.y - 5);
+            
+            ctx.restore();
+        }
+
+        function drawProjectile(proj) {
+            ctx.save();
+            
+            if (proj.type === 'trs80') {
+                ctx.translate(proj.x + 12, proj.y + 9);
+                ctx.rotate(proj.rotation || 0);
+                ctx.fillStyle = '#666';
+                ctx.fillRect(-12, -9, 25, 18);
+                ctx.fillStyle = '#222';
+                ctx.fillRect(-10, -7, 21, 10);
+            } else if (proj.type === 'keystone') {
+                ctx.translate(proj.x + 7.5, proj.y + 12.5);
+                ctx.rotate(proj.rotation || 0);
+                ctx.fillStyle = '#c0c0c0';
+                ctx.fillRect(-7.5, -12.5, 15, 25);
+                ctx.fillStyle = '#1e40af';
+                ctx.fillRect(-6.5, -11.5, 13, 10);
+                ctx.fillStyle = 'white';
+                ctx.font = 'bold 10px Arial';
+                ctx.textAlign = 'center';
+                ctx.fillText('K', 0, -5);
+            }
+            
+            ctx.restore();
+        }
+
+        function drawHeart(heart) {
+            ctx.save();
+            ctx.fillStyle = `rgba(255, 20, 147, ${heart.opacity})`;
+            ctx.font = `${heart.size}px Arial`;
+            ctx.textAlign = 'center';
+            ctx.fillText('❤️', heart.x, heart.y);
+            ctx.restore();
+        }
+
+        function drawBackground() {
+            // Sky
+            const gradient = ctx.createLinearGradient(0, 0, 0, canvas.height);
+            gradient.addColorStop(0, '#87CEEB');
+            gradient.addColorStop(1, '#B0E0E6');
+            ctx.fillStyle = gradient;
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            
+            // Clouds
+            ctx.fillStyle = 'rgba(255,255,255,0.5)';
+            ctx.beginPath();
+            ctx.arc(150, 80, 30, 0, Math.PI * 2);
+            ctx.arc(180, 75, 35, 0, Math.PI * 2);
+            ctx.arc(210, 80, 30, 0, Math.PI * 2);
+            ctx.fill();
+            
+            ctx.beginPath();
+            ctx.arc(650, 100, 35, 0, Math.PI * 2);
+            ctx.arc(685, 95, 40, 0, Math.PI * 2);
+            ctx.arc(720, 100, 35, 0, Math.PI * 2);
+            ctx.fill();
+            
+            // Ground
+            ctx.fillStyle = '#8B7355';
+            ctx.fillRect(0, groundY + randy.height, canvas.width, canvas.height);
+            
+            // Grass patches
+            ctx.fillStyle = '#6b8e23';
+            for(let i = 0; i < 10; i++) {
+                ctx.fillRect(i * 100 + 20, groundY + randy.height - 5, 40, 5);
+            }
+            
+            // Trailer (sits on ground)
+            ctx.fillStyle = '#d3d3d3';
+            ctx.fillRect(500, groundY + 70 - 110, 180, 110);
+            ctx.fillStyle = '#808080';
+            ctx.fillRect(500, groundY + 70 - 130, 180, 20);
+            
+            // Windows
+            ctx.fillStyle = '#4a90e2';
+            ctx.fillRect(520, groundY + 70 - 90, 30, 25);
+            ctx.fillRect(570, groundY + 70 - 90, 30, 25);
+            ctx.fillRect(620, groundY + 70 - 90, 30, 25);
+            
+            // Door
+            ctx.fillStyle = '#654321';
+            ctx.fillRect(645, groundY + 70 - 60, 25, 60);
+            
+            // Title
+            if (!gameStarted) {
+                ctx.fillStyle = 'white';
+                ctx.strokeStyle = 'black';
+                ctx.lineWidth = 5;
+                ctx.font = 'bold 40px Arial';
+                ctx.textAlign = 'center';
+                ctx.strokeText('TRAILER PARK HANGOUT', canvas.width/2, 60);
+                ctx.fillText('TRAILER PARK HANGOUT', canvas.width/2, 60);
+            }
+        }
+
+        function drawWinScreen() {
+            ctx.fillStyle = 'rgba(0,0,0,0.8)';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            
+            ctx.fillStyle = 'white';
+            ctx.strokeStyle = 'black';
+            ctx.lineWidth = 5;
+            ctx.font = 'bold 48px Arial';
+            ctx.textAlign = 'center';
+            ctx.strokeText('YOU WIN!', canvas.width/2, canvas.height/2 - 80);
+            ctx.fillText('YOU WIN!', canvas.width/2, canvas.height/2 - 80);
+            
+            ctx.font = '32px Arial';
+            ctx.strokeText('Brett has 20 Keystone Lights!', canvas.width/2, canvas.height/2 - 20);
+            ctx.fillText('Brett has 20 Keystone Lights!', canvas.width/2, canvas.height/2 - 20);
+            
+            ctx.font = '28px Arial';
+            ctx.strokeText('Michael just got high as usual...', canvas.width/2, canvas.height/2 + 30);
+            ctx.fillText('Michael just got high as usual...', canvas.width/2, canvas.height/2 + 30);
+            
+            ctx.strokeText('So we all good!', canvas.width/2, canvas.height/2 + 70);
+            ctx.fillText('So we all good!', canvas.width/2, canvas.height/2 + 70);
+        }
+
+        // Game logic
+        function updateGame() {
+            if (!gameStarted || gameState === 'won') return;
+            
+            // Timers
+            if (randy.throwTimer > 0) {
+                randy.throwTimer--;
+                randy.throwing = randy.throwTimer > 0;
+            }
+            
+            if (mark.throwTimer > 0) {
+                mark.throwTimer--;
+                mark.throwing = mark.throwTimer > 0;
+            }
+            
+            if (brett.drinkTimer > 0) {
+                brett.drinkTimer--;
+            }
+            
+            if (brett.blockTimer > 0) {
+                brett.blockTimer--;
+                brett.blocking = brett.blockTimer > 0;
+            }
+            
+            // Randy (player) movement
+            if (keys['ArrowLeft']) {
+                randy.x -= randy.speed;
+                randy.direction = -1;
+            }
+            if (keys['ArrowRight']) {
+                randy.x += randy.speed;
+                randy.direction = 1;
+            }
+            
+            // Randy throw Keystone
+            if (keys[' '] && randy.throwTimer === 0) {
+                randy.throwTimer = 20;
+                projectiles.push({
+                    x: randy.x + 40,
+                    y: randy.y + 30,
+                    velocityX: 7,
+                    velocityY: -5,
+                    type: 'keystone',
+                    rotation: 0
+                });
+            }
+            
+            // Jump
+            if (keys['ArrowUp'] && !randy.isJumping) {
+                randy.velocityY = -randy.jumpPower;
+                randy.isJumping = true;
+            }
+            
+            // Gravity
+            randy.velocityY += gravity;
+            randy.y += randy.velocityY;
+            
+            // Ground collision
+            if (randy.y >= groundY) {
+                randy.y = groundY;
+                randy.velocityY = 0;
+                randy.isJumping = false;
+            }
+            
+            // Boundaries
+            randy.x = Math.max(0, Math.min(canvas.width - randy.width, randy.x));
+            
+            // Mark follows Randy (stays 60px behind)
+            const targetX = randy.x - 60;
+            if (Math.abs(mark.x - targetX) > 5) {
+                mark.x += (targetX - mark.x) * 0.1;
+            }
+            mark.y = groundY;
+            
+            // Mark speech bubbles
+            mark.speechTimer++;
+            if (mark.speechTimer > 180 && !mark.currentSpeech) {
+                mark.currentSpeech = mark.speeches[Math.floor(Math.random() * mark.speeches.length)];
+                mark.speechTimer = 0;
+                setTimeout(() => {
+                    mark.currentSpeech = '';
+                }, 3000);
+            }
+            
+            // Mark AI - throws TRS-80 randomly
+            mark.throwTimer++;
+            if (mark.throwTimer > 120) {
+                mark.throwing = true;
+                projectiles.push({
+                    x: mark.x + 50,
+                    y: mark.y + 30,
+                    velocityX: 6,
+                    velocityY: -4,
+                    type: 'trs80',
+                    rotation: 0
+                });
+                mark.throwTimer = 0;
+                setTimeout(() => { mark.throwing = false; }, 200);
+            }
+            
+            // Brett random blocking
+            if (!brett.blocking && Math.random() < 0.01) {
+                brett.blocking = true;
+                brett.blockTimer = 45;
+            }
+            
+            // Update projectiles
+            projectiles = projectiles.filter(proj => {
+                proj.x += proj.velocityX;
+                proj.y += proj.velocityY;
+                proj.velocityY += gravity * 0.5;
+                proj.rotation = (proj.rotation || 0) + 0.15;
+                
+                // Check if Keystone hits Brett
+                if (proj.type === 'keystone' && 
+                    proj.x > brett.x - 20 && 
+                    proj.x < brett.x + 50 &&
+                    proj.y > brett.y && 
+                    proj.y < brett.y + 80) {
+                    
+                    // Check if blocked
+                    if (brett.blocking) {
+                        // Blocked! Bounce off
+                        proj.velocityX = -proj.velocityX * 0.5;
+                        proj.velocityY = -3;
+                        return true;
+                    } else {
+                        // Success!
+                        keystoneCount++;
+                        brett.drinkTimer = 60;
+                        
+                        // Spawn hearts
+                        for (let i = 0; i < 3; i++) {
+                            hearts.push({
+                                x: brett.x + 25 + (Math.random() - 0.5) * 40,
+                                y: brett.y - 10,
+                                velocityY: -2 - Math.random(),
+                                opacity: 1,
+                                size: 20 + Math.random() * 10
+                            });
+                        }
+                        
+                        if (keystoneCount >= 20) {
+                            gameState = 'won';
+                        }
+                        
+                        return false;
+                    }
+                }
+                
+                // TRS-80 just falls
+                return proj.y < canvas.height && proj.x > -100 && proj.x < canvas.width + 100;
+            });
+            
+            // Update hearts
+            hearts = hearts.filter(heart => {
+                heart.y += heart.velocityY;
+                heart.velocityY -= 0.05;
+                heart.opacity -= 0.015;
+                return heart.opacity > 0;
+            });
+        }
+
+        // Game loop
+        function gameLoop() {
+            drawBackground();
+            
+            if (gameStarted) {
+                updateGame();
+                
+                projectiles.forEach(drawProjectile);
+                hearts.forEach(drawHeart);
+                
+                drawMark();
+                drawRandy();
+                drawBrett();
+                drawMichael();
+                
+                if (gameState === 'won') {
+                    drawWinScreen();
+                }
+            }
+            
+            requestAnimationFrame(gameLoop);
+        }
+
+        gameLoop();
+    </script>
+</body>
+</html>
