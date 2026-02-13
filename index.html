@@ -187,7 +187,6 @@
         // Game state
         let gameState = 'playing';
         const keys = {};
-        let keystoneCount = 0;
         let hearts = [];
         let currentPlayer = 'randy';
         let gameTime = 0;
@@ -943,9 +942,8 @@
             ctx.fillText('YOU WIN!', canvas.width/2, 80);
             
             ctx.font = '24px Arial';
-            const winMessage = brett.dead ? 'Brett was defeated!' : 'Brett got 20 Keystones!';
-            ctx.strokeText(winMessage, canvas.width/2, 120);
-            ctx.fillText(winMessage, canvas.width/2, 120);
+            ctx.strokeText('Brett was defeated!', canvas.width/2, 120);
+            ctx.fillText('Brett was defeated!', canvas.width/2, 120);
             
             drawScoreboard(160);
         }
@@ -1221,24 +1219,15 @@
                             proj.velocityY = -3;
                             return true;
                         } else {
-                            // Keystone caught - just count it, no healing
-                            keystoneCount++;
-                            brett.drinkTimer = 60;
-                            
-                            for (let i = 0; i < 3; i++) {
-                                hearts.push({
-                                    x: brett.x + 25 + (Math.random() - 0.5) * 40,
-                                    y: brett.y - 10,
-                                    velocityY: -2 - Math.random(),
-                                    opacity: 1,
-                                    size: 20 + Math.random() * 10
-                                });
-                            }
-                            
-                            if (keystoneCount >= 20) {
+                            // Keystone damages Brett
+                            brett.health -= 5;
+                            brett.hitTimer = 20;
+                            if (brett.health <= 0) {
+                                brett.health = 0;
+                                brett.dead = true;
+                                brett.deathTime = gameTime;
                                 gameState = 'won';
                             }
-                            
                             return false;
                         }
                     } else if (proj.type === 'trs80') {
